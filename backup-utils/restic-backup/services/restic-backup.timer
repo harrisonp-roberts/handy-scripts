@@ -1,0 +1,9 @@
+[Unit]
+Description=timer for system backup
+
+[Timer]
+OnUnitActiveSec=1d
+OnBootSec=2m
+
+[Install]
+WantedBy=timers.target

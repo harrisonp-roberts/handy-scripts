@@ -1,0 +1,12 @@
+[Unit]
+Description=run daily backup script
+
+[Service]
+StandardError=journal
+StandardOutput=journal
+User=hroberts
+Type=simple
+ExecStart=/bin/bash -c 'PATH=/home/hroberts/.local/bin:$PATH exec /home/hroberts/.local/bin/restic-backup.sh "{RESTIC_PASSWORD}"'
+
+[Install]
+WantedBy=multi-user.target
