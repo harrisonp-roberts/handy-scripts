@@ -1,0 +1,85 @@
+format = """
+$container\
+$cmd_duration\
+[divider](fg:background1 bg:background2)\
+$directory\
+[divider](fg:background2 bg:background3)\
+$git_branch\
+$git_status\
+[rightterminator](fg:background3)\
+$fill\
+[leftterminator](fg:background4)\
+$time\
+[divider](fg:background4 bg:background5)\
+$battery
+$character
+"""
+
+[container]
+format = '[$symbol \[$name\]](bg:background1 fg:foreground1)'
+
+[fill]
+symbol = '-'
+
+[cmd_duration]
+min_time = 1
+show_milliseconds = false
+format = '[$duration](bg:background1 fg:foreground1)'
+
+[username]
+show_always = true
+style_user = 'white'
+format = '[$user](fg:foreground1)'
+
+[battery]
+full_symbol = ' 󰁹 '
+discharging_symbol = ' 󰁹 '
+charging_symbol = ' 󰂄 '
+format = '[$symbol](fg:foreground1 bg:background5)'
+
+[[battery.display]]
+threshold = 100
+discharging_symbol = ' 󰁹 '
+charging_symbol = ' 󰂄 '
+style = 'white'
+
+[[battery.display]]
+threshold = 80
+discharging_symbol = ' 󰂂 '
+charging_symbol = ' 󰂊 '
+style = 'white'
+
+[[battery.display]]
+discharging_symbol = ' 󰁾 '
+charging_symbol = ' 󰢝 '
+threshold = 50
+style = 'white'
+
+[[battery.display]]
+discharging_symbol = ' 󱃍 '
+charging_symbol = ' 󰢜 '
+threshold = 15
+style = 'white'
+
+[directory]
+format = "[ $path ](fg:foreground1 bg:background2)"
+home_symbol = "/home/hroberts"
+truncate_to_repo = false
+truncation_length = 8
+truncation_symbol = '.../'
+
+[git_branch]
+symbol = ""
+format = '[[ $symbol $branch ](fg:foreground1 bg:background3)]($style)'
+
+[git_status]
+format = '[[($all_status$ahead_behind )](fg:foreground1 bg:background3)]($style)'
+
+[time]
+disabled = false
+time_format = "%R" # Hour:Minute Format
+format = '[[ $time ](bg:background4 fg:foreground1)]($style)'
+
+[character]
+success_symbol = '[\$](light green)'
+error_symbol = '[\$](red)'
