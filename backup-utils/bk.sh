@@ -82,8 +82,6 @@ set_config() {
     # then write the value to a temp config file, then replace the old one
     cat "${config_file}" | jq --argjson path "${key_array_string}" --arg value "$value" 'setpath($path; $value)' > "${temp_config_file}"
 
-    cat "${config_file}" | jq >> /dev/null
-
     if cat "${config_file}" | jq '.' >> /dev/null -ne 0; then
         # attempting to parse the temporary config file failed, so it is not valid. cleanup and exit
         printf "failed to set config value %s" "${value}"
@@ -229,7 +227,7 @@ create_secret() {
         return 1
     fi
 
-    echo "${secret}" | systemd-creds encrypt --with-key=tpm2 --name="${credential_name}" - "${credential_directory}/${credential_name}"
+    echo "${secret}" | sudo systemd-creds encrypt --with-key=tpm2 --name="${credential_name}" - "${credential_directory}/${credential_name}"
 }
 
 read_secret() {
@@ -240,7 +238,7 @@ read_secret() {
         return 1
     fi
 
-    local -r decrypted_secret=$(systemd-creds decrypt "${credential_filepath}" 2>/dev/null)
+    local -r decrypted_secret=$(sudo systemd-creds decrypt --no-ask-password "${credential_filepath}" 2>/dev/null)
 
     if [ $? -eq 0 ]; then
         echo "${decrypted_secret}"
@@ -303,6 +301,8 @@ open() {
 
     local -r repository_password=$(read_secret "${CONFIG_DIR}/${repository_password_credential}")
     local -r repository_id=$(read_secret "${CONFIG_DIR}/${repository_id_credential}")
+
+    echo "password ${repository_password}"
 
     echo "restic mount: ${restic_mount_directory}"
 
@@ -397,6 +397,45 @@ list_repositories( ){
     done
 }
 
+# shellcheck disable=SC2120
+remove_repository() {
+    local -r config_file="${CONFIG_FILE:-$1}"
+    local -r temp_config_file="${config_file}.tmp"
+
+
+    echo "getting config"
+    get_config "repos.${repository_name}.REPOSITORY_PASSWORD"
+    echo "got config"
+    local -r password_credential=$(get_config "repos.${repository_name}.REPOSITORY_PASSWORD")
+    local -r repository_id_credential=$(get_config "repos.${repository_name}.REPOSITORY_ID")
+
+    if [ ! -f "${CONFIG_DIR}/${password_credential}" ]; then
+        debug "failed to remove password credential ${password_credential}"
+    else
+        debug "removing credential ${password_credential}"
+        rm -f "${CONFIG_DIR}/${password_credential}"
+    fi
+
+    if [ ! -f "${CONFIG_DIR}/${repository_id_credential}" ]; then
+        debug "failed to remove repository id credential ${repository_id_credential}"
+    else
+        debug "removing credential ${repository_id_credential}"
+        rm -f "${CONFIG_DIR}/${repository_id_credential}"
+    fi
+
+    debug "deleting repository ${repository_name}"
+    cat "${config_file}" | jq --arg repo_name "${repository_name}" 'del(.repos.[$repo_name])' > "${temp_config_file}"
+
+    if cat "${config_file}" | jq '.' >> /dev/null -ne 0; then
+        # attempting to parse the temporary config file failed, so it is not valid. cleanup and exit
+        printf "failed to remove config value %s" "${repository_name}"
+        rm "${temp_config_file}"
+        return 1
+    fi 
+
+    mv "${temp_config_file}" "${config_file}"
+}
+
 main() {
     case $command in
         open) open ;;
@@ -405,6 +444,7 @@ main() {
         uninstall) uninstall ;;
         add) add_repository ;;
         list) list_repositories ;;
+        remove) remove_repository ;;
         *) usage ;;
     esac
 }
@@ -421,6 +461,7 @@ while [[ "$#" -gt 0 ]]; do
     uninstall) set_command "uninstall" ;;
     add) set_command "add" ;;
     list) set_command "list" ;;
+    remove) set_command "remove" ;;
     *) usage ;;
     esac
     shift
