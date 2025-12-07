@@ -46,6 +46,7 @@ set_config() {
     mv "${temp_config_file}" "${config_file}"
 }
 
+
 # retrieve a property from a JSON configuration file
 #
 # mandatory parameters
@@ -55,6 +56,16 @@ get_config() {
     local -r key_path="$1"
     local -r config_file="${CONFIG_FILE:-$3}"
 
-    local -r value=$(jq ".${key_path}" "${config_file}")
-    echo "${value}"
+    if [ ! -f "${config_file}" ]; then
+        printf "config file %s not found\n" "${config_file}" 
+    fi
+
+    local -r value=$(jq -r ".${key_path}" "${config_file}")
+    if [ "${value}" != "null" ]; then
+        echo "${value}"
+        return 0
+    else
+        echo ""
+        return 1
+    fi
 }
