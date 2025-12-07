@@ -287,6 +287,7 @@ install() {
 }
 
 open() {
+    debug "opening repository ${repository_name}"
     if [ -z "${repository_name}" ]; then
         printf " -- %s" 'repository name parameter is required'
         exit 1
@@ -302,9 +303,6 @@ open() {
     local -r repository_password=$(read_secret "${CONFIG_DIR}/${repository_password_credential}")
     local -r repository_id=$(read_secret "${CONFIG_DIR}/${repository_id_credential}")
 
-    echo "password ${repository_password}"
-
-    echo "restic mount: ${restic_mount_directory}"
 
     if [ -z "${restic_mount_directory}" ]; then
         printf " -- %s" '-m backup mount directory parameter is required'
@@ -402,10 +400,6 @@ remove_repository() {
     local -r config_file="${CONFIG_FILE:-$1}"
     local -r temp_config_file="${config_file}.tmp"
 
-
-    echo "getting config"
-    get_config "repos.${repository_name}.REPOSITORY_PASSWORD"
-    echo "got config"
     local -r password_credential=$(get_config "repos.${repository_name}.REPOSITORY_PASSWORD")
     local -r repository_id_credential=$(get_config "repos.${repository_name}.REPOSITORY_ID")
 
