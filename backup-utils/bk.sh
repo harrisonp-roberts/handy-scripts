@@ -390,7 +390,7 @@ add_repository() {
 }
 
 list_repositories( ){
-    local -r repositories=$(jq 'keys | @sh' "${CONFIG_FILE}")
+    local -r repositories=$(jq '.repos|keys | @sh' "${CONFIG_FILE}")
 
     for repository in ${repositories}; do
         printf "%s\n" "${repository}"
@@ -415,12 +415,12 @@ while [[ "$#" -gt 0 ]]; do
     -pid | --restic-pid) restic_pid="$2"; shift ;;
     -v | --use_verbose) use_verbose=true; shift; shift ;;
     -r | --repository) repository_name="$2"; shift ;;
-    open) set_command "open"; shift; shift ;;
-    close) set_command "close"; shift; shift ;;
-    install) set_command "install"; shift; shift ;;
-    uninstall) set_command "uninstall"; shift; shift ;;
-    add) set_command "add"; shift; shift ;;
-    list) set_command "list"; shift; shift ;;
+    open) set_command "open" ;;
+    close) set_command "close" ;;
+    install) set_command "install" ;;
+    uninstall) set_command "uninstall" ;;
+    add) set_command "add" ;;
+    list) set_command "list" ;;
     *) usage ;;
     esac
     shift
