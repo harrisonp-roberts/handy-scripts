@@ -294,12 +294,12 @@ open() {
         exit 1
     fi
 
-    local -r restic_mount_directory=$(get_config "${repository_name}.RESTIC_MOUNT")
-    local -r rclone_mount_directory=$(get_config "${repository_name}.RCLONE_MOUNT")
-    local -r rclone_remote_name=$(get_config "${repository_name}.RCLONE_REMOTE_NAME")
+    local -r restic_mount_directory=$(get_config "repos.${repository_name}.RESTIC_MOUNT")
+    local -r rclone_mount_directory=$(get_config "repos.${repository_name}.RCLONE_MOUNT")
+    local -r rclone_remote_name=$(get_config "repos.${repository_name}.RCLONE_REMOTE_NAME")
 
-    repository_password_credential=$(get_config "${repository_name}.REPOSITORY_PASSWORD")
-    repository_id_credential=$(get_config "${repository_name}.REPOSITORY_ID")
+    repository_password_credential=$(get_config "repos.${repository_name}.REPOSITORY_PASSWORD")
+    repository_id_credential=$(get_config "repos.${repository_name}.REPOSITORY_ID")
 
     local -r repository_password=$(read_secret "${CONFIG_DIR}/${repository_password_credential}")
     local -r repository_id=$(read_secret "${CONFIG_DIR}/${repository_id_credential}")
@@ -339,7 +339,7 @@ open() {
 }
 
 close() {
-    local -r rclone_mount_directory=$(get_config "${repository_name}.RCLONE_MOUNT")
+    local -r rclone_mount_directory=$(get_config "repos.${repository_name}.RCLONE_MOUNT")
 
     printf "closing repository\n"
     restic_pid=$(cat "${PIDFILE}")
@@ -361,7 +361,7 @@ add_repository() {
     echo "${repository_name}"
 
     # TODO: If repository_name contains spaces, this fails
-    if get_config "${repository_name}" &> /dev/null; then
+    if get_config "repos.${repository_name}" &> /dev/null; then
         printf "repository %s can not be created because it already exists\n" "${repository_name}"
         return 1
     fi
@@ -382,11 +382,11 @@ add_repository() {
     create_secret "${repository_password}" "${CONFIG_DIR}" "${password_credential_file}"
     create_secret "${repository_id}" "${CONFIG_DIR}" "${repository_id_credential_file}"
 
-    set_config "${repository_name}.RCLONE_MOUNT" "${rclone_mount}"
-    set_config "${repository_name}.RESTIC_MOUNT" "${restic_mount}"
-    set_config "${repository_name}.RCLONE_REMOTE_NAME" "${rclone_remote_name}"
-    set_config "${repository_name}.REPOSITORY_PASSWORD" "${password_credential_file}"
-    set_config "${repository_name}.REPOSITORY_ID" "${repository_id_credential_file}"
+    set_config "repos.${repository_name}.RCLONE_MOUNT" "${rclone_mount}"
+    set_config "repos.${repository_name}.RESTIC_MOUNT" "${restic_mount}"
+    set_config "repos.${repository_name}.RCLONE_REMOTE_NAME" "${rclone_remote_name}"
+    set_config "repos.${repository_name}.REPOSITORY_PASSWORD" "${password_credential_file}"
+    set_config "repos.${repository_name}.REPOSITORY_ID" "${repository_id_credential_file}"
 }
 
 list_repositories( ){
