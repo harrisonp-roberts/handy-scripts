@@ -5,23 +5,25 @@
 # TODO: clean up various error outputs
 
 # Constants
-
 HOME_DIR=$(eval echo "~${USER}")
-CONFIG_DIR="${HOME_DIR}"/.config
-CONFIG_FILE="${CONFIG_DIR}/bk.config"
+CONFIG_DIR="${HOME_DIR}"/.config/bk
+CONFIG_FILE="${CONFIG_DIR}/bk-config.json"
 PIDFILE="${HOME_DIR}/.cache/restic.pid"
 
 # Global Variables
-VERBOSE=false
-COMMAND=""
+use_verbose=false
+command=""
+repository_name=""
 
 usage() {
     printf "bk is a utility to manage backups created using the restic backup"
     printf "service.\n"
     printf "capabilities:\n"
-    printf "    open and close a backup repository\n"
+    printf "    save multiple backup repositories and their credentials\n"
+    printf "    open a backup repository"
     printf "examples:\n"
-    printf "    - bk open\n"
+    printf "    - bk -r repo_name open\n"
+    printf "    - bk add\n"
     printf "    - bk install\n"
     printf "    - bk uninstall\n"
     exit 0
@@ -30,43 +32,90 @@ usage() {
 debug() {
     local -r msg="$1"
 
-    if [ $VERBOSE = true ]; then
+    if [ $use_verbose = true ]; then
         printf "DEBUG: %s\n" "${msg}"
     fi
 }
 
 set_command() {
-    local -r command=${1}
+    local -r cmd=${1}
 
-    if [ -z "${COMMAND}" ]; then
-        COMMAND="${command}"
+    if [ -z "${command}" ]; then
+        command="${cmd}"
     else
         printf "Error: Only a single command can be used at a time\n"
         exit 1
     fi
 }
 
+# create or update properties within a JSON configuration file
+#
+# mandatory parameters
+#   1. the path of the key that will be created or updated in the format of "path.to.key"
+#   2. the value to set
+#   3. (optional) the path to the configuration file to update
 set_config() {
-    local -r property_key="$1"
-    local -r property_value="$2"
-    local -r entry="${property_key}=${property_value}"
+    local -r key_path="$1"
+    local -r value="$2"
+    local -r config_file="${CONFIG_FILE:-$3}"
+    
+    local -r temp_config_file="${config_file}.tmp"
 
-    local -r property_line_number=$(grep -n "${property_key}" | head -1 | cut -d: -f1)
-    if [ -z "${property_line_number}" ]; then 
-        # the property does not already exist, append it to the file
-        echo "${entry}" >> "${CONFIG_FILE}"
-    else 
-        sed -i "Ns/.*/${entry}/" "${CONFIG_FILE}"
+    if [ -z "${config_file}" ]; then
+        printf "the config file must be specified with the CONFIG_FILE variable or by passing it as a parameter"
+        exit 1
     fi
+
+    if [ ! -f "${CONFIG_FILE}" ]; then
+        debug "config file does not exist, creating config file"
+        echo "{}" >> "${CONFIG_FILE}"
+    fi
+
+    debug "setting ${key_path} to ${value}"
+
+    # we need to use the weird < < () to get the readarray input to avoid an extra empty list item for some reason
+    readarray -t -d . key_array < <(printf "%s" "${key_path}")
+
+    # we must convert the array to a json string to pass as input to jq
+    local -r key_array_string=$(printf '%s\n' "${key_array[@]}" | jq -R . | jq -s .)
+
+    # then write the value to a temp config file, then replace the old one
+    cat "${config_file}" | jq --argjson path "${key_array_string}" --arg value "$value" 'setpath($path; $value)' > "${temp_config_file}"
+
+    cat "${config_file}" | jq >> /dev/null
+
+    if cat "${config_file}" | jq '.' >> /dev/null -ne 0; then
+        # attempting to parse the temporary config file failed, so it is not valid. cleanup and exit
+        printf "failed to set config value %s" "${value}"
+        rm "${temp_config_file}"
+        return 1
+    fi 
+
+    mv "${temp_config_file}" "${config_file}"
+
+    return 0
 }
 
-read_config() {
-    local -r property_name="$1"
-    local property
+# retrieve a property from a JSON configuration file
+#
+# mandatory parameters
+#   1. the path of the key that will be created or updated in the format of "path.to.key"
+#   2. (optional) the path to the configuration file to retrieve the value from
+get_config() {
+    local -r key_path="$1"
+    local -r config_file="${CONFIG_FILE:-$3}"
 
-    property=$(cat "${CONFIG_FILE}" | grep "${property_name}=" | cut -d'=' -f2-)
-    if [ ! -z "${property}" ]; then
-        echo "${property}"
+    if [ ! -f "${config_file}" ]; then
+        printf "config file %s not found\n" "${config_file}" 
+    fi
+
+    local -r value=$(jq -r ".${key_path}" "${config_file}")
+    if [ "${value}" != "null" ]; then
+        echo "${value}"
+        return 0
+    else
+        echo ""
+        return 1
     fi
 }
 
@@ -138,7 +187,7 @@ mount_restic_repository() {
 
     mountpoint -q "${mount_directory}" || {
 
-        if [ "$(find "${mount_directory}" -maxdepth 1 | wc -l)" -gt 0 ]; then
+        if [ "$(find "${mount_directory}" -maxdepth 1 | wc -l)" -gt 1 ]; then
             printf "'%s' is not empty\n" "${mount_directory}" 1>&2
             return 1
         fi
@@ -149,6 +198,9 @@ mount_restic_repository() {
         echo "${restic_pid}" >"${PIDFILE}"
         sleep 15
     }
+
+    echo "mount directory: ${mount_directory}"
+    mountpoint "${mount_directory}"
 
     if mountpoint -q "${mount_directory}"; then
         return 0
@@ -198,24 +250,61 @@ read_secret() {
 }
 
 uninstall() {
-    local -r HOME_DIR=$(eval echo "~${USER}")
     local -r install_path="${HOME_DIR}/.local/bin/bk"
 
     # script assumes systemd compatibility and presence of ~/.local/bin
     if [ ! -z "${install_path}" ]; then
-        printf "removing existing installation\n"
         rm -f "${install_path}"
-        rm -f "${CONFIG_FILE}"
+        rm -rf "${CONFIG_DIR}"
     fi
 }
 
-handle_open_command() {
-    local -r restic_mount_directory=$(read_config "RESTIC_MOUNT")
-    local -r rclone_mount_directory=$(read_config "RCLONE_MOUNT")
-    local -r rclone_remote_name=$(read_config "RCLONE_REMOTE_NAME")
+install() {
+    local -r install_path="${HOME_DIR}/.local/bin/bk"
 
-    local -r repository_password=$(read_secret "${CONFIG_DIR}/repository_password.cred")
-    local -r repository_id=$(read_secret "${CONFIG_DIR}/repository_id.cred")
+
+    if [ ! -d "${HOME_DIR}/.local/bin" ]; then
+        printf "%s/.local/bin directory is required for installation" "${HOME_DIR}"
+        exit 1
+    fi
+
+    local keep_config="n"
+
+    if [ -f "${install_path}" ]; then
+        read -r -p "would you like to keep your current config? (y/n)" "keep_config"
+    fi
+
+    if [ "${keep_config}" != "y" ]; then
+        uninstall
+        mkdir "${CONFIG_DIR}"
+        echo "{}" >> "${CONFIG_FILE}"
+    else
+        rm -f "${install_path}"
+    fi
+
+    printf "installing bk\n"
+    cp "./bk.sh" "${install_path}"
+    printf "bk installed!\n"
+    exit 0
+}
+
+open() {
+    if [ -z "${repository_name}" ]; then
+        printf " -- %s" 'repository name parameter is required'
+        exit 1
+    fi
+
+    local -r restic_mount_directory=$(get_config "${repository_name}.RESTIC_MOUNT")
+    local -r rclone_mount_directory=$(get_config "${repository_name}.RCLONE_MOUNT")
+    local -r rclone_remote_name=$(get_config "${repository_name}.RCLONE_REMOTE_NAME")
+
+    repository_password_credential=$(get_config "${repository_name}.REPOSITORY_PASSWORD")
+    repository_id_credential=$(get_config "${repository_name}.REPOSITORY_ID")
+
+    local -r repository_password=$(read_secret "${CONFIG_DIR}/${repository_password_credential}")
+    local -r repository_id=$(read_secret "${CONFIG_DIR}/${repository_id_credential}")
+
+    echo "restic mount: ${restic_mount_directory}"
 
     if [ -z "${restic_mount_directory}" ]; then
         printf " -- %s" '-m backup mount directory parameter is required'
@@ -249,8 +338,8 @@ handle_open_command() {
     printf "to close the repository run bk close, or kill the restic process '%s' and unmount '%s'" "${restic_pid}" "${rclone_mount_directory}"
 }
 
-handle_close_command() {
-    local -r rclone_mount_directory=$(read_config "RCLONE_MOUNT")
+close() {
+    local -r rclone_mount_directory=$(get_config "${repository_name}.RCLONE_MOUNT")
 
     printf "closing repository\n"
     restic_pid=$(cat "${PIDFILE}")
@@ -265,66 +354,57 @@ handle_close_command() {
     unmount_rclone_remote "${rclone_mount_directory}"
 }
 
-install() {
-    local -r install_path="${HOME_DIR}/.local/bin/bk"
-    local -r config_path="${CONFIG_DIR}/bk"
+add_repository() {
+    printf "please enter a name to save your repository under\n"
+    read -r -p "repository name: " repository_name
 
-    if [ ! -d "${HOME_DIR}/.local/bin" ]; then
-        printf "%s/.local/bin directory is required for installation" "${HOME_DIR}"
-        exit 1
+    echo "${repository_name}"
+
+    # TODO: If repository_name contains spaces, this fails
+    if get_config "${repository_name}" &> /dev/null; then
+        printf "repository %s can not be created because it already exists\n" "${repository_name}"
+        return 1
     fi
 
-    local keep_config="n"
+    local -r password_credential_file="${repository_name}-repository_password.cred"
+    local -r repository_id_credential_file="${repository_name}-repository_id.cred"
 
-    if [ -f "${install_path}" ]; then
-        read -r -p "would you like to keep your current config? (y/n)" "keep_config"
-    fi
+    printf "please enter your restic repository ID and password\n"
+    read -r -p "restic repository ID: " repository_id
+    read -r -p "what is the repository password: " repository_password
+    printf "\n"
 
-    if [ "${keep_config}" != "y" ]; then
-        printf "please enter your restic repository ID and password\n"
-        read -r -p "restic repository ID: " repository_id
-        read -r -p "what is the repository password: " repository_password
-        printf "\n"
+    printf "please enter the directory that rclone will mount the repository files to, and the directory that restic will mount the opened backup to\n"
+    read -r -p "what is the rclone mount directory: " rclone_mount
+    read -r -p "what is the restic mount directory: " restic_mount
+    read -r -p "what is the name of your (already configured) rclone remote:" rclone_remote_name
 
-        printf "please enter the directory that rclone will mount the repository files to, and the directory that restic will mount the opened backup to\n"
-        read -r -p "what is the rclone mount directory: " rclone_mount
-        read -r -p "what is the restic mount directory: " restic_mount
-        read -r -p "what is the name of your (already configured) rclone remote:" rclone_remote_name
-        printf "removing previous configuration and installation...\n"
-        uninstall
-        printf "previous configuration and installation removed\n"
+    create_secret "${repository_password}" "${CONFIG_DIR}" "${password_credential_file}"
+    create_secret "${repository_id}" "${CONFIG_DIR}" "${repository_id_credential_file}"
 
-        printf "setting config file '%s'" "${CONFIG_FILE}"
+    set_config "${repository_name}.RCLONE_MOUNT" "${rclone_mount}"
+    set_config "${repository_name}.RESTIC_MOUNT" "${restic_mount}"
+    set_config "${repository_name}.RCLONE_REMOTE_NAME" "${rclone_remote_name}"
+    set_config "${repository_name}.REPOSITORY_PASSWORD" "${password_credential_file}"
+    set_config "${repository_name}.REPOSITORY_ID" "${repository_id_credential_file}"
+}
 
-        {
-            echo "RCLONE_MOUNT=" "${rclone_mount}"
-            echo "RESTIC_MOUNT=${restic_mount}"
-            echo "RCLONE_REMOTE_NAME=${rclone_remote_name}"
-        } >>"${CONFIG_FILE}"
+list_repositories( ){
+    local -r repositories=$(jq 'keys | @sh' "${CONFIG_FILE}")
 
-        printf "updated config file %s!\n" "${CONFIG_FILE}"
-        cat "${CONFIG_FILE}"
-        create_secret "${repository_password}" "${CONFIG_DIR}" "repository_password.cred"
-        create_secret "${repository_id}" "${CONFIG_DIR}" "repository_id.cred"
-    else
-        printf "keeping previous configuration\n"
-        printf "removing previous installation...\n"
-        rm -f "${install_path}"
-        printf "previous installation removed\n"
-    fi
-
-    printf "installing bk\n"
-    cp "./bk.sh" "${install_path}"
-    printf "bk installed!\n"
-    exit 0
+    for repository in ${repositories}; do
+        printf "%s\n" "${repository}"
+    done
 }
 
 main() {
-    case $COMMAND in
-        open) handle_open_command ;;
-        close) handle_close_command ;;
-        install) handle_install_command ;;
-        uninstall) handle_uninstall_command ;;
+    case $command in
+        open) open ;;
+        close) close ;;
+        install) install ;;
+        uninstall) uninstall ;;
+        add) add_repository ;;
+        list) list_repositories ;;
         *) usage ;;
     esac
 }
@@ -332,12 +412,15 @@ main() {
 while [[ "$#" -gt 0 ]]; do
     case $1 in
     -h | --help) usage exit 0 ;;
-    -pid | --restic-pid) restic_pid=$2 shift ;;
-    -v | --verbose) VERBOSE=true ;;
-    open) set_command "open" ;;
-    close) set_command "close" ;;
-    install) set_command "install" ;;
-    uninstall) set_command "uninstall" ;;
+    -pid | --restic-pid) restic_pid="$2"; shift ;;
+    -v | --use_verbose) use_verbose=true; shift; shift ;;
+    -r | --repository) repository_name="$2"; shift ;;
+    open) set_command "open"; shift; shift ;;
+    close) set_command "close"; shift; shift ;;
+    install) set_command "install"; shift; shift ;;
+    uninstall) set_command "uninstall"; shift; shift ;;
+    add) set_command "add"; shift; shift ;;
+    list) set_command "list"; shift; shift ;;
     *) usage ;;
     esac
     shift
