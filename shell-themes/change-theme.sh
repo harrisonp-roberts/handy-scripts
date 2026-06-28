@@ -49,6 +49,10 @@ uninstall() {
 # Installs or reinstals the theme changer and it's themes
 install() {
     local execution_directory=$(dirname "${SCRIPT_EXECUTION_PATH}")
+    if [ ! -d "${HOME}/.local/bin" ]; then
+        mkdir -p "${HOME}/.local/bin"
+    fi
+
     if [ $(realpath "${SCRIPT_EXECUTION_PATH}") = $(realpath "${SCRIPT_INSTALLATION_PATH}") ]; then
         printf "Script already installed\n"
         exit 0
