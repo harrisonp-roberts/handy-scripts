@@ -190,10 +190,11 @@ mount_restic_repository() {
             return 1
         fi
 
-        echo "${repository_password}" | restic -r "${repository_path}" mount "${mount_directory}"
+        echo "${repository_password}" | restic -r "${repository_path}" mount "${mount_directory}" &
         restic_pid=$!
 
         echo "${restic_pid}" >"${PIDFILE}"
+        sleep 30
     }
 
     echo "mount directory: ${mount_directory}"
