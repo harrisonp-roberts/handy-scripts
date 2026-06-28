@@ -64,8 +64,8 @@ cp "services/${TIMER_NAME}" "${temp_timer_name}"
 sed -i -e "s#{RESTIC_PASSWORD}#${password}#g" "${temp_service_name}"
 
 sudo setenforce 0
-installService "$(realpath ${temp_timer_name})" "${TIMER_NAME}" "/etc/systemd/system"
-installService "$(realpath ${temp_service_name})" "${SERVICE_NAME}" "/etc/systemd/system"
+install_service "$(realpath ${temp_timer_name})" "${TIMER_NAME}" "/etc/systemd/system"
+install_service "$(realpath ${temp_service_name})" "${SERVICE_NAME}" "/etc/systemd/system"
 
 sudo systemctl start "${TIMER_NAME}"
 sudo systemctl start "${SERVICE_NAME}"

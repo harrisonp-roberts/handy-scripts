@@ -190,11 +190,10 @@ mount_restic_repository() {
             return 1
         fi
 
-        echo "${repository_password}" | restic -r "${repository_path}" mount "${mount_directory}" >/dev/null 2>&1 &
+        echo "${repository_password}" | restic -r "${repository_path}" mount "${mount_directory}"
         restic_pid=$!
 
         echo "${restic_pid}" >"${PIDFILE}"
-        sleep 15
     }
 
     echo "mount directory: ${mount_directory}"
@@ -302,7 +301,6 @@ open() {
 
     local -r repository_password=$(read_secret "${CONFIG_DIR}/${repository_password_credential}")
     local -r repository_id=$(read_secret "${CONFIG_DIR}/${repository_id_credential}")
-
 
     if [ -z "${restic_mount_directory}" ]; then
         printf " -- %s" '-m backup mount directory parameter is required'
